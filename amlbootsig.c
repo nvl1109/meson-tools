@@ -151,11 +151,11 @@ static int do_fip(FILE *fout, FILE *fin)
 	return 0;
 }
 
-static int boot_sig(const char *input, const char *output)
+static int boot_sig(const char *input, const char *output, const char *mbr)
 {
-	FILE *fin, *fout;
+	FILE *fin, *fout, *fmbr;
 	uint8_t random[16];
-	uint8_t *src_buf, *buf, *fip_buf;
+	uint8_t *src_buf, *buf, *fip_buf, *mbr_buf;
 	struct AmlogicHeader hdr = {
 		.sig = AMLOGIC_SIGNATURE,
 		.size = 64,
@@ -228,9 +228,26 @@ static int boot_sig(const char *input, const char *output)
 		return 1;
 	}
 
+	if (mbr){
+		fmbr = fopen(mbr, "rb");
+		if (fmbr == NULL) {
+			perror(mbr);
+			return 1;
+		}
+		mbr_buf = malloc(512);
+		if (mbr_buf == NULL) {
+			perror("malloc");
+			return 1;
+		}
+		fread(mbr_buf, 1, 512, fmbr);
+	}
+
 	memset(buf, 0, hdr.size);
 	memcpy(buf, &hdr, sizeof(struct AmlogicHeader));
 	memcpy(buf + hdr.padding_offset + hdr.padding_size, src_buf, 0xb000);
+	if (mbr){
+		memcpy(buf + 0x01BE - 16, mbr_buf + 0x01BE, 66);
+	}
 
 	SHA256_Init(&sha256_ctx);
 	SHA256_Update(&sha256_ctx, buf, hdr.header_size);
@@ -259,5 +276,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	return boot_sig(argv[1], argv[2]);
+	if (argc > 3)
+		return boot_sig(argv[1], argv[2], argv[3]);
+	return boot_sig(argv[1], argv[2], NULL);
 }
